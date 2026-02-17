@@ -1,4 +1,4 @@
-# Environment variables (secrets)
+c# Environment variables (secrets)
 .env
 
 # Python
@@ -15,3 +15,6 @@ venv/
 # OS
 Thumbs.db
 .DS_Store
+
+# Old Backend folder (now merged into root)
+Backend/

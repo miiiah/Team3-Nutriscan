@@ -21,9 +21,9 @@ from dotenv import load_dotenv
 # ──────────────────────────────────────────────
 load_dotenv()  # Load environment variables from .env file
 
-# Resolve the path to the Frontend folder (one level up from Backend)
+# Frontend folder is right next to this file
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FRONTEND_DIR = os.path.join(os.path.dirname(BASE_DIR), "Frontend")
+FRONTEND_DIR = os.path.join(BASE_DIR, "Frontend")
 
 app = Flask(__name__, static_folder=FRONTEND_DIR, static_url_path="/static")
 CORS(app)  # Enable CORS so the frontend can call this API
