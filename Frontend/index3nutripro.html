@@ -159,103 +159,187 @@ body { font-family: 'Inter', sans-serif; }
 
 <script>
 
+/* ──────────────────────────────────────────────
+   Backend URL — leave empty when served from Flask.
+   Set to "http://localhost:5000" only if running
+   the frontend separately.
+   ────────────────────────────────────────────── */
+const API_BASE = "";
+
 /* Splash Screen */
-setTimeout(()=>{
-  document.getElementById("splash").style.opacity="0";
-  setTimeout(()=>{
+setTimeout(() => {
+  document.getElementById("splash").style.opacity = "0";
+  setTimeout(() => {
     document.getElementById("splash").classList.add("hidden");
     document.getElementById("app").classList.remove("hidden");
-  },1000);
-},6000);
+  }, 1000);
+}, 3000);
 
 /* Progress Animation */
-function updateProgress(){
-  const bar=document.getElementById("progress-bar");
-  const text=document.getElementById("progress-text");
-  let percent=0;
-  bar.style.width="0%";
-  text.innerText="0%";
+function updateProgress() {
+  const bar = document.getElementById("progress-bar");
+  const text = document.getElementById("progress-text");
+  let percent = 0;
+  bar.style.width = "0%";
+  text.innerText = "0%";
 
-  const interval=setInterval(()=>{
-    percent+=10;
-    bar.style.width=percent+"%";
-    text.innerText=percent+"%";
-    if(percent>=100) clearInterval(interval);
-  },100);
+  const interval = setInterval(() => {
+    percent += 10;
+    bar.style.width = percent + "%";
+    text.innerText = percent + "%";
+    if (percent >= 100) clearInterval(interval);
+  }, 100);
 }
 
-/* Scanner */
-function startScanner(){
+/* Scanner — uses html5-qrcode to read barcode from camera */
+function startScanner() {
   const html5QrCode = new Html5Qrcode("reader");
-  html5QrCode.start({ facingMode:"environment" },{ fps:10, qrbox:250 },
-  barcode=>{
-    html5QrCode.stop();
-    fetchProduct(barcode);
-  });
-}
-
-/* Search by Barcode */
-function searchByBarcode(){
-  const code=document.getElementById("barcode-input").value;
-  if(code) fetchProduct(code);
-}
-
-/* Search by Name */
-function searchByName(){
-  const name=document.getElementById("product-input").value;
-  fetch(`https://world.openfoodfacts.org/cgi/search.pl?search_terms=${name}&search_simple=1&json=1`)
-  .then(res=>res.json())
-  .then(data=>{
-    if(data.products.length>0){
-      fetchProduct(data.products[0].code);
+  html5QrCode.start(
+    { facingMode: "environment" },
+    { fps: 10, qrbox: 250 },
+    barcode => {
+      html5QrCode.stop();
+      fetchProduct(barcode);
     }
-  });
+  );
 }
 
-/* Fetch Product */
-function fetchProduct(barcode){
+/* Search by Barcode — manual entry */
+function searchByBarcode() {
+  const code = document.getElementById("barcode-input").value.trim();
+  if (code) fetchProduct(code);
+}
+
+/* Search by Name — calls the backend /search-product endpoint */
+function searchByName() {
+  const name = document.getElementById("product-input").value.trim();
+  if (!name) return;
+
   updateProgress();
-  fetch(`https://world.openfoodfacts.org/api/v2/product/${barcode}.json`)
-  .then(res=>res.json())
-  .then(data=>{
-    const p=data.product;
-    document.getElementById("product-card").classList.remove("hidden");
 
-    document.getElementById("product-name").innerText=p.product_name||"Unknown";
-    document.getElementById("product-type").innerText=p.categories||"";
-    document.getElementById("veg-status").innerText=
-      p.ingredients_analysis_tags?.includes("en:vegetarian")?"Vegetarian":"Non-Vegetarian";
-
-    document.getElementById("product-image").src=p.image_url||"";
-
-    const meter=document.getElementById("health-meter");
-    const score=p.nutriscore_score||0;
-    const percent=Math.min(Math.abs(score)*10,100);
-    meter.style.width=percent+"%";
-    meter.className=`h-full rounded-full ${score<=0?"bg-green-500":score<=10?"bg-yellow-500":"bg-red-500"}`;
-
-    const allergens=document.getElementById("allergens");
-    allergens.innerHTML="";
-    if(p.allergens_tags?.length){
-      document.getElementById("allergen-warning").classList.remove("hidden");
-      p.allergens_tags.forEach(a=>{
-        const li=document.createElement("li");
-        li.innerText=a.replace("en:","");
-        allergens.appendChild(li);
-      });
-    } else {
-      document.getElementById("allergen-warning").classList.add("hidden");
-      allergens.innerHTML="<li>No allergens detected</li>";
-    }
-
-    const additives=document.getElementById("additives");
-    additives.innerHTML="";
-    p.additives_tags?.forEach(a=>{
-      const li=document.createElement("li");
-      li.innerText=a.replace("en:","");
-      additives.appendChild(li);
+  fetch(`${API_BASE}/search-product`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: name })
+  })
+    .then(res => {
+      if (!res.ok) return res.json().then(err => { throw err; });
+      return res.json();
+    })
+    .then(data => renderProduct(data))
+    .catch(err => {
+      alert(err.error || "Product not found");
+      console.error("Search error:", err);
     });
-  });
+}
+
+/* Fetch Product by barcode — calls the backend /scan-barcode endpoint */
+function fetchProduct(barcode) {
+  updateProgress();
+
+  fetch(`${API_BASE}/scan-barcode`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ barcode: barcode })
+  })
+    .then(res => {
+      if (!res.ok) return res.json().then(err => { throw err; });
+      return res.json();
+    })
+    .then(data => renderProduct(data))
+    .catch(err => {
+      alert(err.error || "Product not found");
+      console.error("Fetch error:", err);
+    });
+}
+
+/* Render the product data into the UI */
+function renderProduct(p) {
+  document.getElementById("product-card").classList.remove("hidden");
+
+  // Basic info
+  document.getElementById("product-name").innerText = p.product_name || "Unknown";
+  document.getElementById("product-type").innerText = p.categories || "";
+  document.getElementById("product-image").src = p.image || "";
+
+  // Veg / Non-Veg status
+  const vegTags = p.ingredients_analysis_tags || [];
+  document.getElementById("veg-status").innerText =
+    vegTags.includes("en:vegetarian") ? "🟢 Vegetarian" : "🔴 Non-Vegetarian";
+
+  // Health meter (nutriscore)
+  const meter = document.getElementById("health-meter");
+  const score = p.nutriscore_score || 0;
+  const percent = Math.min(Math.abs(score) * 10, 100);
+  meter.style.width = percent + "%";
+  meter.className =
+    `h-full rounded-full transition-all duration-500 ${score <= 0 ? "bg-green-500" : score <= 10 ? "bg-yellow-500" : "bg-red-500"}`;
+  document.getElementById("health-label").innerText =
+    score <= 0 ? "Healthy" : score <= 10 ? "Moderate" : "Unhealthy";
+
+  // Allergens
+  const allergens = document.getElementById("allergens");
+  allergens.innerHTML = "";
+  const allergenTags = p.allergens_tags || [];
+  if (allergenTags.length) {
+    document.getElementById("allergen-warning").classList.remove("hidden");
+    allergenTags.forEach(a => {
+      const li = document.createElement("li");
+      li.innerText = a;
+      allergens.appendChild(li);
+    });
+  } else {
+    document.getElementById("allergen-warning").classList.add("hidden");
+    allergens.innerHTML = "<li>No allergens detected</li>";
+  }
+
+  // Additives
+  const additivesList = document.getElementById("additives");
+  additivesList.innerHTML = "";
+  const additivesArr = p.additives || [];
+  if (additivesArr.length) {
+    additivesArr.forEach(a => {
+      const li = document.createElement("li");
+      li.innerText = a;
+      additivesList.appendChild(li);
+    });
+  } else {
+    additivesList.innerHTML = "<li>No additives found</li>";
+  }
+
+  // Preservatives (new section — appended under additives if present)
+  const preservatives = p.preservatives || [];
+  if (preservatives.length) {
+    const heading = document.createElement("h3");
+    heading.className = "font-bold mt-4";
+    heading.innerText = "Preservatives";
+    const ul = document.createElement("ul");
+    ul.className = "list-disc pl-5 text-orange-600 font-semibold";
+    preservatives.forEach(pr => {
+      const li = document.createElement("li");
+      li.innerText = pr;
+      ul.appendChild(li);
+    });
+    // Insert after the additives section
+    const additivesContainer = additivesList.parentElement;
+    additivesContainer.after(ul);
+    additivesContainer.after(heading);
+  }
+
+  // Ingredients
+  const ingredients = p.ingredients || [];
+  if (ingredients.length) {
+    let ingredientsSection = document.getElementById("ingredients-section");
+    if (!ingredientsSection) {
+      ingredientsSection = document.createElement("div");
+      ingredientsSection.id = "ingredients-section";
+      ingredientsSection.className = "mt-4";
+      document.getElementById("product-card").appendChild(ingredientsSection);
+    }
+    ingredientsSection.innerHTML =
+      `<h3 class="font-bold">Ingredients</h3>
+       <p class="text-sm text-[#608584] mt-1">${ingredients.join(", ")}</p>`;
+  }
 }
 
 </script>
